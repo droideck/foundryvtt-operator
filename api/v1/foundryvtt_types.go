@@ -29,7 +29,7 @@ type FoundryvttSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of Foundryvtt. Edit foundryvtt_types.go to remove/update
-	Size     int32 `json:"size"`
+	Size int32 `json:"size"`
 }
 
 // FoundryvttStatus defines the observed state of Foundryvtt

@@ -18,18 +18,26 @@ package controllers
 
 import (
 	"context"
+	"reflect"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	vttv1 "github.com/droideck/foundryvtt-operator/api/v1"
+	"github.com/go-logr/logr"
 )
 
 // FoundryvttReconciler reconciles a Foundryvtt object
 type FoundryvttReconciler struct {
 	client.Client
+	Log    logr.Logger
 	Scheme *runtime.Scheme
 }
 
@@ -50,7 +58,7 @@ func (r *FoundryvttReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	log := r.Log.WithValues("foundryvtt", req.NamespacedName)
 
 	// Fetch the Foundryvtt instance
-	foundryvtt := &cachev1alpha1.Foundryvtt{}
+	foundryvtt := &vttv1.Foundryvtt{}
 	err := r.Get(ctx, req.NamespacedName, foundryvtt)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -124,9 +132,10 @@ func (r *FoundryvttReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 // deploymentForFoundryvtt returns a foundryvtt Deployment object
-func (r *FoundryvttReconciler) deploymentForFoundryvtt(m *cachev1alpha1.Foundryvtt) *appsv1.Deployment {
+func (r *FoundryvttReconciler) deploymentForFoundryvtt(m *vttv1.Foundryvtt) *appsv1.Deployment {
 	ls := labelsForFoundryvtt(m.Name)
 	replicas := m.Spec.Size
+	volumeName := m.Name + "-volume"
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -143,13 +152,25 @@ func (r *FoundryvttReconciler) deploymentForFoundryvtt(m *cachev1alpha1.Foundryv
 					Labels: ls,
 				},
 				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{{
+						Name: volumeName,
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "foundryvtt-claim",
+							},
+						},
+					}},
 					Containers: []corev1.Container{{
-						Image:   "foundryvtt:1.4.36-alpine",
+						Image:   "quay.io/spichugi/foundry-vtt-oc:latest",
 						Name:    "foundryvtt",
-						Command: []string{"foundryvtt", "-m=64", "-o", "modern", "-v"},
+						Command: []string{"docker-entrypoint.sh", "node", "/opt/foundryvtt/resources/app/main.js", "--headless", "--dataPath=/opt/foundrydata/"},
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: 11211,
+							ContainerPort: 30000,
 							Name:          "foundryvtt",
+						}},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      volumeName,
+							MountPath: "/opt/foundrydata",
 						}},
 					}},
 				},
@@ -176,10 +197,10 @@ func getPodNames(pods []corev1.Pod) []string {
 	return podNames
 }
 
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *FoundryvttReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&vttv1.Foundryvtt{}).
+		Owns(&appsv1.Deployment{}).
 		Complete(r)
 }
