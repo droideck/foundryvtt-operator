@@ -1,0 +1,20 @@
+domain: spichugin.dev
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+  sdk.x-openshift.io/v1: {}
+projectName: foundryvtt-operator
+repo: github.com/droideck/foundryvtt-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: spichugin.dev
+  group: vtt
+  kind: Foundryvtt
+  path: github.com/droideck/foundryvtt-operator/api/v1
+  version: v1
+version: "3"

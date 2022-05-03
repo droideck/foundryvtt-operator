@@ -1,0 +1,6 @@
+apiVersion: vtt.spichugin.dev/v1
+kind: Foundryvtt
+metadata:
+  name: foundryvtt-sample
+spec:
+  # TODO(user): Add fields here

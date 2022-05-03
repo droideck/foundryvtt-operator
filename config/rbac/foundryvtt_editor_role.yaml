@@ -1,0 +1,24 @@
+# permissions for end users to edit foundryvtts.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: foundryvtt-editor-role
+rules:
+- apiGroups:
+  - vtt.spichugin.dev
+  resources:
+  - foundryvtts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vtt.spichugin.dev
+  resources:
+  - foundryvtts/status
+  verbs:
+  - get
