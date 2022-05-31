@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,6 +73,25 @@ func (r *FoundryvttReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		// Error reading the object - requeue the request.
 		log.Error(err, "Failed to get Foundryvtt")
+		return ctrl.Result{}, err
+	}
+
+	// Check if the persistentVolumeClaim already exists, if not create a new one
+	pv := &corev1.PersistentVolumeClaim{}
+	err = r.Get(ctx, types.NamespacedName{Name: foundryvtt.Name, Namespace: foundryvtt.Namespace}, pv)
+	if err != nil && errors.IsNotFound(err) {
+		// Define a new persistentVolumeClaim
+		pvc := r.persistentVolumeClaimForFoundryvtt(foundryvtt)
+		log.Info("Creating a new PersistentVolumeClaim", "PersistentVolumeClaim.Namespace", pvc.Namespace, "PersistentVolumeClaim.Name", pvc.Name)
+		err = r.Create(ctx, pvc)
+		if err != nil {
+			log.Error(err, "Failed to create new PersistentVolume", "PersistentVolumeClaim.Namespace", pvc.Namespace, "PersistentVolumeClaim.Name", pvc.Name)
+			return ctrl.Result{}, err
+		}
+		// Deployment created successfully - return and requeue
+		return ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		log.Error(err, "Failed to get PersistentVolumeClaim")
 		return ctrl.Result{}, err
 	}
 
@@ -133,11 +153,39 @@ func (r *FoundryvttReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
+// persistentVolumeClaimForFoundryvtt returns a foundryvtt PersistentVolume object
+func (r *FoundryvttReconciler) persistentVolumeClaimForFoundryvtt(m *vttv1.Foundryvtt) *corev1.PersistentVolumeClaim {
+	claimName := m.Name + "-data-pv-claim"
+	storageClassName := "local-path"
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      claimName,
+			Namespace: m.Namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			StorageClassName: &storageClassName,
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				corev1.ReadWriteOnce,
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("5G"),
+				},
+			},
+		},
+	}
+	// Set Foundryvtt instance as the owner and controller
+	ctrl.SetControllerReference(m, pvc, r.Scheme)
+	return pvc
+}
+
 // deploymentForFoundryvtt returns a foundryvtt Deployment object
 func (r *FoundryvttReconciler) deploymentForFoundryvtt(m *vttv1.Foundryvtt) *appsv1.Deployment {
 	ls := labelsForFoundryvtt(m.Name)
 	replicas := m.Spec.Size
 	volumeName := m.Name + "-volume"
+	claimName := m.Name + "-data-pv-claim"
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -158,7 +206,7 @@ func (r *FoundryvttReconciler) deploymentForFoundryvtt(m *vttv1.Foundryvtt) *app
 						Name: volumeName,
 						VolumeSource: corev1.VolumeSource{
 							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: "foundryvtt-claim",
+								ClaimName: claimName,
 							},
 						},
 					}},
